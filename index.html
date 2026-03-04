@@ -1,1 +1,212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>INSTAXER - 富士实验室版</title>
+    <link rel="stylesheet" href="https://unpkg.com/cropperjs/dist/cropper.min.css">
+    <script src="https://unpkg.com/cropperjs/dist/cropper.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+    <style>
+        :root { --fuji-white: #FDFDFD; --accent: #141414; --orange: #F27D26; }
+        body { font-family: "PingFang SC", "Courier New", Courier, monospace; background-color: #E4E3E0; margin: 0; color: var(--accent); overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+        
+        /* Header */
+        header { background: white; padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--accent); }
+        .logo { font-weight: 900; letter-spacing: 3px; font-size: 20px; text-transform: uppercase; }
+        .save-btn { background: var(--accent); color: white; border: none; padding: 10px 20px; font-size: 12px; cursor: pointer; letter-spacing: 1px; font-weight: bold; }
+        .save-btn:hover { background: var(--orange); }
 
+        /* Main Layout */
+        main { display: flex; flex: 1; overflow: hidden; }
+        .preview-area { flex: 1; background: #D1D0CB; display: flex; justify-content: center; align-items: center; padding: 40px; position: relative; }
+        .controls-panel { width: 350px; background: #E4E3E0; border-left: 1px solid var(--accent); padding: 30px; overflow-y: auto; }
+
+        /* Instax Frame */
+        .instax-frame { background: var(--fuji-white); box-shadow: 0 30px 60px rgba(0,0,0,0.2); position: relative; transition: all 0.3s; cursor: pointer; }
+        .mini { width: 324px; height: 516px; }
+        .square { width: 432px; height: 516px; }
+        .wide { width: 648px; height: 516px; }
+
+        .image-slot { position: absolute; background: #111; overflow: hidden; top: 24px; left: 24px; right: 24px; bottom: 120px; }
+        .image-slot img { width: 100%; height: 100%; object-fit: cover; }
+        
+        /* Controls UI */
+        section { margin-bottom: 30px; }
+        h2 { font-size: 10px; font-weight: bold; letter-spacing: 2px; color: #888; margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+        .format-group { display: flex; gap: 10px; }
+        .format-btn { flex: 1; border: 1px solid var(--accent); background: white; padding: 10px; font-size: 10px; cursor: pointer; }
+        .format-btn.active { background: var(--accent); color: white; }
+        
+        .slider-item { margin-bottom: 15px; }
+        .slider-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 5px; }
+        input[type="range"] { width: 100%; accent-color: var(--accent); }
+
+        /* Upload Modal (Simplified) */
+        #cropper-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; display: none; flex-direction: column; align-items: center; padding: 40px; }
+        .cropper-container { width: 100%; max-width: 600px; height: 400px; background: #222; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">INSTAXER</div>
+    <button class="save-btn" onclick="generate()">保存 / SAVE</button>
+</header>
+
+<main>
+    <div class="preview-area">
+        <div id="instax-frame" class="instax-frame mini" onclick="document.getElementById('file-input').click()">
+            <div class="image-slot">
+                <img id="preview-img" src="" style="display:none">
+                <div id="upload-hint" style="color:#444; text-align:center; margin-top:150px; font-size:12px;">点击上传图片</div>
+            </div>
+            <div id="date-display" style="position:absolute; bottom:40px; width:100%; text-align:center; font-family:monospace; font-size:14px; opacity:0.7"></div>
+        </div>
+    </div>
+
+    <div class="controls-panel">
+        <section>
+            <h2>01. 规格 / FORMAT</h2>
+            <div class="format-group">
+                <button class="format-btn active" onclick="setFormat('mini', this)">MINI</button>
+                <button class="format-btn" onclick="setFormat('square', this)">SQUARE</button>
+                <button class="format-btn" onclick="setFormat('wide', this)">WIDE</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>02. 实验室 / FILM LAB</h2>
+            <div class="slider-item">
+                <div class="slider-label"><span>曝光 / Exposure</span><span id="v-exp">0</span></div>
+                <input type="range" id="exp" min="-100" max="100" value="0" oninput="update()">
+            </div>
+            <div class="slider-item">
+                <div class="slider-label"><span>冷暖调 / Tone</span><span id="v-tone">中性</span></div>
+                <input type="range" id="tone" min="0" max="100" value="50" oninput="update()">
+            </div>
+            <div class="slider-item">
+                <div class="slider-label"><span>胶片颗粒 / Grain</span><span id="v-grain">10</span></div>
+                <input type="range" id="grain" min="0" max="100" value="10" oninput="update()">
+            </div>
+            <div class="slider-item">
+                <div class="slider-label"><span>边缘失光 / Vignette</span><span id="v-vig">20</span></div>
+                <input type="range" id="vig" min="0" max="100" value="20" oninput="update()">
+            </div>
+        </section>
+
+        <input type="file" id="file-input" hidden accept="image/*" onchange="handleFile(this)">
+    </div>
+</main>
+
+<div id="cropper-modal">
+    <div class="cropper-container">
+        <img id="cropper-img">
+    </div>
+    <button class="save-btn" onclick="finishCrop()">完成裁切 / DONE</button>
+</div>
+
+<script>
+    let cropper;
+    let currentFormat = 'mini';
+    const config = {
+        mini: { aspect: 46/62, w: 540, h: 860, iw: 460, ih: 620 },
+        square: { aspect: 1, w: 720, h: 860, iw: 640, ih: 640 },
+        wide: { aspect: 99/62, w: 1100, h: 860, iw: 990, ih: 620 }
+    };
+
+    function setFormat(f, btn) {
+        currentFormat = f;
+        document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const frame = document.getElementById('instax-frame');
+        frame.className = `instax-frame ${f}`;
+    }
+
+    function handleFile(input) {
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = e => {
+                document.getElementById('cropper-modal').style.display = 'flex';
+                const cropImg = document.getElementById('cropper-img');
+                cropImg.src = e.target.result;
+                if(cropper) cropper.destroy();
+                cropper = new Cropper(cropImg, { aspectRatio: config[currentFormat].aspect });
+            };
+            reader.readAsDataURL(input.files[0]);
+        }
+    }
+
+    function finishCrop() {
+        const canvas = cropper.getCroppedCanvas();
+        document.getElementById('preview-img').src = canvas.toDataURL();
+        document.getElementById('preview-img').style.display = 'block';
+        document.getElementById('upload-hint').style.display = 'none';
+        document.getElementById('cropper-modal').style.display = 'none';
+        update();
+    }
+
+    function update() {
+        const exp = document.getElementById('exp').value;
+        const tone = document.getElementById('tone').value;
+        const grain = document.getElementById('grain').value;
+        const vig = document.getElementById('vig').value;
+
+        // UI Feedback
+        document.getElementById('v-exp').innerText = exp;
+        document.getElementById('v-tone').innerText = tone > 55 ? '偏冷' : (tone < 45 ? '偏暖' : '中性');
+        
+        const img = document.getElementById('preview-img');
+        // Apply filters to preview
+        let filters = `brightness(${100 + parseInt(exp)}%) `;
+        img.style.filter = filters;
+    }
+
+    async function generate() {
+        const conf = config[currentFormat];
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = conf.w;
+        canvas.height = conf.h;
+
+        // 1. Frame
+        ctx.fillStyle = '#FDFDFD';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // 2. Image
+        const img = document.getElementById('preview-img');
+        if(!img.src) return alert('请先上传图片');
+
+        const imgObj = new Image();
+        imgObj.src = img.src;
+        await imgObj.decode();
+
+        const x = (conf.w - conf.iw) / 2;
+        const y = x; // Mini & Square Top Margin
+        ctx.drawImage(imgObj, x, y, conf.iw, conf.ih);
+
+        // 3. Filters (Simplified Lab)
+        const tone = document.getElementById('tone').value;
+        ctx.globalCompositeOperation = 'soft-light';
+        ctx.fillStyle = tone > 50 ? `rgba(0,50,255,0.1)` : `rgba(255,100,0,0.1)`;
+        ctx.fillRect(x, y, conf.iw, conf.ih);
+        
+        ctx.globalCompositeOperation = 'source-over';
+        // Vignette
+        const grd = ctx.createRadialGradient(conf.w/2, conf.h/2.5, conf.iw/3, conf.w/2, conf.h/2.5, conf.iw);
+        grd.addColorStop(1, `rgba(0,0,0,${document.getElementById('vig').value/200})`);
+        grd.addColorStop(0, 'transparent');
+        ctx.fillStyle = grd;
+        ctx.fillRect(x, y, conf.iw, conf.ih);
+
+        // Download
+        const link = document.createElement('a');
+        link.download = `instaxer-${Date.now()}.png`;
+        link.href = canvas.toDataURL();
+        link.click();
+        
+        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    }
+</script>
+</body>
+</html>
