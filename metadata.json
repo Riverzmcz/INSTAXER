@@ -1,0 +1,5 @@
+{
+  "name": "INSTAXER - 富士拍立得生成器",
+  "description": "一款简约大气的富士拍立得风格照片生成工具，支持 Mini、Square 和 Wide 三种尺寸，内置富士感滤镜。",
+  "requestFramePermissions": []
+}
